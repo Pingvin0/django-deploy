@@ -3,7 +3,7 @@ use colored::Colorize;
 
 pub fn print_install_failure(install: &Output) {
     eprintln!(
-        "{}: {}\n{}: {}",
+        "{}:\n{}\n\n{}\n{}",
         "STDOUT".bright_black().bold(),
         
         String::from_utf8(install.stdout.clone())
