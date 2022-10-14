@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 inquire = "0.4.0"
 colored = "2.0.0"
+sudo = "0.6.0"

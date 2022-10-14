@@ -2,8 +2,9 @@
 mod webserver_config;
 mod app_config;
 mod sgi;
+mod utils;
 
-use std::{path::PathBuf, process::exit};
+use std::{path::PathBuf, process::exit, fs::canonicalize};
 
 use webserver_config::{WebServer, handle_apache, handle_nginx};
 use sgi::{SGIServer};
@@ -12,19 +13,37 @@ use inquire::{validator::Validation, CustomType};
 use colored::Colorize;
 
 fn main() {
-    let django_app = PathBuf::from(inquire::Text::new("Django application path: ")
-    .prompt()
-    .expect("Failed asking for django app path"));
+    sudo::escalate_if_needed();
+    let django_app_dir = PathBuf::from(
+        inquire::Text::new("Django application path:")
+        .with_validator(inquire::validator::MinLengthValidator::new(1))
+        .prompt()
+        .expect("Failed prompting for django app path.")
+    );
 
-    if !django_app.exists() || !django_app.is_dir() {
-        eprintln!("{} {} {}", "The path".red(), django_app.to_str().unwrap().trim().green().bold(), "does not exist, or isn't a directory.".red());
+    if !django_app_dir.exists() || !django_app_dir.is_dir() {
+        eprintln!("{} {} {}", "The path".red(), django_app_dir.to_str().unwrap().trim().green().bold(), "does not exist, or isn't a directory.".red());
         exit(1);
     }
+
+    let django_app = inquire::Text::new("Django project name:")
+    .with_validator(inquire::validator::MinLengthValidator::new(1))
+    .prompt()
+    .expect("Failed prompting for django app name.");
+
+    let django_proj_settings_dir = django_app_dir.join(PathBuf::from(&django_app));
+    
+    
+    if !django_proj_settings_dir.exists() || !django_proj_settings_dir.is_dir() {
+        eprintln!("{} {} {}", "The path".red(), django_proj_settings_dir.to_str().unwrap().trim().green().bold(), "does not exist, or isn't a directory.".red());
+        exit(1);
+    }
+    
 
     
 
 
-    let wsgi_server = inquire::Select::new("Please select SGI server: ", vec![
+    let wsgi_server = inquire::Select::new("Please select SGI server:", vec![
         SGIServer::Gunicorn,
         SGIServer::Daphne,
         SGIServer::Uvicorn
@@ -42,11 +61,25 @@ fn main() {
         .with_formatter(&|i| format!(":{:.2}", i))
         .with_error_message("Please type a valid port number")
         .with_help_message("Type the amount in US dollars using a decimal point as a separator")
-        .prompt();
+        .prompt()
+        .expect("Failed prompting for port number.");
 
-        // wsgi_server.create_systemd_service(
+        wsgi_server.create_systemd_service(
+            &django_app,
 
-        // );
+            django_app_dir
+            .canonicalize().unwrap()
+            .to_str().unwrap(),
+
+            port,
+            inquire::Select::new(
+                "Please select which SGI file you want to use:",
+                vec![
+                    ".wsgi",
+                    ".asgi"
+                ]
+            ).prompt().expect("Failed to prompt for SGI file.")
+        );
     }
 
 
@@ -60,7 +93,8 @@ fn main() {
         
     ])
     .prompt()
-    .expect("Error during asking webserver type.");
+    .expect("Error during prompting webserver type.");
+    web_server.run_checks();
 
     
     if web_server != WebServer::None {
@@ -72,13 +106,14 @@ fn main() {
             WebServer::NGINX => "/etc/nginx",
             _ => panic!("None selected even though it shouldn't be possible")
         }).prompt()
-        .expect("Error during asking for webserver config dir."));
+        .expect("Error during prompting for webserver config dir."));
 
         if !web_server_dir.exists() {
             eprintln!("{} {} {}", "Web server configuration directory".red(),  web_server_dir.to_str().unwrap().trim().green(), "does not exist!".red());
             exit(1);
         }
 
+        
 
         match web_server {
             WebServer::NGINX => {handle_nginx(&web_server_dir)},
