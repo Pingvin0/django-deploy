@@ -6,7 +6,7 @@ mod utils;
 
 use std::{path::PathBuf, process::exit, fs::canonicalize};
 
-use webserver_config::{WebServer, handle_apache, handle_nginx};
+use webserver_config::{WebServer};
 use sgi::{SGIServer};
 
 use inquire::{validator::Validation, CustomType};
@@ -115,11 +115,7 @@ fn main() {
 
         
 
-        match web_server {
-            WebServer::NGINX => {handle_nginx(&web_server_dir)},
-            WebServer::Apache => {handle_apache(&web_server_dir)},
-            WebServer::None => {panic!()}
-        }
+        web_server.create_config();
        
     }
     

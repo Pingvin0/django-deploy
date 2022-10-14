@@ -110,16 +110,9 @@ impl WebServer {
             println!("{}", "Installation of webserver was successful!".green());
         }
     }
+
+    pub fn create_config(&self) {
+        if self == &Self::None {return;}
+    }
 }
 
-pub fn handle_nginx(web_server_dir: &PathBuf) {
-    let static_files = inquire::Confirm::new("Configure staticfiles?")
-    .with_default(true)
-    .prompt()
-    .expect("Failed asking for staticfile config.");
-
-}
-
-pub fn handle_apache(web_server_dir: &PathBuf) {
-
-}
