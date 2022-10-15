@@ -78,7 +78,7 @@ impl WebServer {
             .args(["install", "-y"])
             .args(match self {
                 Self::Apache => vec![
-                    "apache2e",
+                    "apache2",
                     "apache2-utils"
                 ],
                 Self::NGINX => vec![
