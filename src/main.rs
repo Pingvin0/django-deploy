@@ -4,7 +4,7 @@ mod app_config;
 mod sgi;
 mod utils;
 
-use std::{path::PathBuf, process::exit, fs::canonicalize};
+use std::{path::PathBuf, process::{exit, Command}, fs::canonicalize};
 
 use webserver_config::{WebServer};
 use sgi::{SGIServer};
@@ -12,9 +12,14 @@ use sgi::{SGIServer};
 use inquire::{validator::Validation, CustomType};
 use colored::Colorize;
 
+use fs_extra::dir::{self, CopyOptions};
+
+use crate::utils::print_install_failure;
+
 fn main() {
     sudo::escalate_if_needed();
-    let django_app_dir = PathBuf::from(
+
+    let mut django_app_dir = PathBuf::from(
         inquire::Text::new("Django application path:")
         .with_validator(inquire::validator::MinLengthValidator::new(1))
         .prompt()
@@ -22,7 +27,12 @@ fn main() {
     );
 
     if !django_app_dir.exists() || !django_app_dir.is_dir() {
-        eprintln!("{} {} {}", "The path".red(), django_app_dir.to_str().unwrap().trim().green().bold(), "does not exist, or isn't a directory.".red());
+        eprintln!(
+            "{} {} {}",
+            "The path".red(),
+            django_app_dir.to_str().unwrap().trim().green().bold(),
+            "does not exist, or isn't a directory.".red()
+        );
         exit(1);
     }
 
@@ -31,7 +41,7 @@ fn main() {
     .prompt()
     .expect("Failed prompting for django app name.");
 
-    let django_proj_settings_dir = django_app_dir.join(PathBuf::from(&django_app));
+    let mut django_proj_settings_dir = django_app_dir.join(PathBuf::from(&django_app));
     
     
     if !django_proj_settings_dir.exists() || !django_proj_settings_dir.is_dir() {
@@ -39,7 +49,82 @@ fn main() {
         exit(1);
     }
     
+    // If sgirunner user does not exist
+    if !Command::new("id")
+    .arg("sgirunner")
+    .output().unwrap().status.success() {
+        println!("{}", "sgirunner user does not exist. Creating...".cyan());
+        let add_user = Command::new("useradd")
+        .args(["-r", "-M", "-s", "/sbin/nologin", "sgirunner"])
+        .output();
 
+        if let Err(e) = add_user {
+            eprintln!("{} {}", "Failed creating sgirunner user. Error:".red(), e.to_string().bold().red());
+            exit(1);
+        }
+
+        let cmd = add_user.unwrap();
+        if !cmd.status.success() {
+            eprintln!("Failed creating sgirunner user.");
+            print_install_failure(&cmd);
+            exit(1);
+        }
+
+
+
+        println!("{}", "Created sgirunner user".green());
+    }
+
+    
+
+    if inquire::Confirm::new("Copy app to /django-apps?")
+    .with_default(true).prompt().expect("Failed prompting for app copy.") {
+        let django_apps = PathBuf::from("/django-apps");
+        if !django_apps.exists() {
+            let create = std::fs::create_dir(&django_apps);
+            if let Err(e) = create {
+                eprintln!("{} {}", "Failed creating /django-apps. Error:".red(), e.to_string().bold().red());
+            }
+        }
+        // Separate if, cause if the folder was created above we want to
+        // check that as well.
+        if django_apps.exists() {
+            let new_app_dir = django_apps.join(&django_app);
+            if new_app_dir.exists() {
+                eprintln!("{}", "Target app directory already exists!".red());
+                exit(1);
+            }
+            
+            std::fs::create_dir(&new_app_dir);
+
+            let copy = dir::copy(&django_app_dir, new_app_dir, &CopyOptions::new());
+
+            if let Err(e) = copy {
+                eprintln!("{} {}", "Failed copying app dir to /django-apps. Error:".red(), e.to_string().bold().red());
+            } else {
+                django_app_dir = django_apps.join(&django_app);
+                django_proj_settings_dir = django_app_dir.join(&django_app);
+
+
+                let chown = Command::new("chown")
+                .args(["-R", "sgirunner:sgirunner", "/django-apps"])
+                .output();
+
+                if let Err(e) = chown{
+                    eprintln!("{} {}", "Failed setting ownership for new app folder. Error:".red(), e.to_string().bold().red());
+                }
+
+                let chmod = Command::new("chmod")
+                .args(["770", "-R", "/django-apps"])
+                .output();
+
+                if let Err(e) = chmod{
+                    eprintln!("{} {}", "Failed setting permissions for new app folder. Error:".red(), e.to_string().bold().red());
+                }
+
+            }
+        }
+    }
     
 
 
@@ -115,7 +200,9 @@ fn main() {
 
         
 
-        web_server.create_config();
+        web_server.create_config(
+            &web_server_dir
+        );
        
     }
     

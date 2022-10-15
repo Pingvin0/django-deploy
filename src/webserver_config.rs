@@ -1,4 +1,4 @@
-use std::{fmt::{Display, format}, fs, path::PathBuf, process::{exit, Command}};
+use std::{fmt::{Display, format}, fs::{self, File}, path::PathBuf, process::{exit, Command}};
 
 use colored::Colorize;
 use inquire::ui::StyleSheet;
@@ -26,6 +26,35 @@ impl Display for WebServer {
 }
 
 impl WebServer {
+    fn test_config(&self) -> bool {
+        let cmd = Command::new(match self {
+            Self::Apache => "apachectl",
+            Self::NGINX => "nginx",
+            _ => panic!("test_config on WebServer::None")
+        })
+        .arg(match self {
+            Self::Apache => "configtest",
+            Self::NGINX => "-t",
+            _ => panic!("test_config on WebServer::None")
+        })
+        .output();
+
+        if let Err(e) = cmd {
+            return false;
+        }
+
+        let cmd = cmd.unwrap();
+
+        if !cmd.status.success() {
+            eprintln!("{}", "Web server config is invalid!".red());
+            print_install_failure(&cmd);
+
+            return false;
+        }
+
+        return true;
+    }
+
     fn is_installed(&self) -> bool{
         let cmd = Command::new(match self {
             Self::NGINX => "nginx",
@@ -109,10 +138,46 @@ impl WebServer {
         ).with_render_config(blue_text).with_default(true).prompt().expect("Failed prompting for install of webserver.") {
             self.install();
         }
+        println!("{}", "Testing web server configuration before adding new config file.".blue());
+        if self.test_config() {
+
+        } else {
+            eprintln!("{}", "Web server config is faulty.".bright_red().bold());
+            if !inquire::Confirm::new("Proceed?").with_default(true).prompt().expect("Failed prompting for proceed") {
+                eprintln!("{}", "Exiting process...".red());
+                exit(1);
+            }
+        }
     }
 
-    pub fn create_config(&self) {
+    pub fn create_config(
+        &self,
+        config_dir: &PathBuf
+    ) {
         if self == &Self::None {return;}
+
+        println!("{}", "Creating web server config file.".cyan());
+
+        let domain = inquire::Text::new("Enter website domain:")
+        .with_validator(inquire::validator::MinLengthValidator::new(3))
+        .prompt().expect("Failed prompting for domain.");
+
+        let ac_domain = inquire::Text::new("Enter frontend domain (for Access-Control-Allow-Origin)")
+        .with_validator(inquire::validator::MinLengthValidator::new(3))
+        .prompt().expect("Failed prompting for AC domain.");
+
+        let prefetch = inquire::Confirm::new("Include Access-Control-Allow-Origin in prefetch req? (Recommended)")
+        .with_default(true).prompt().expect("Failed prompting for prefetch cfg");
+
+        let cfg_file = config_dir.join("sites-available/").join(format!("django-{}.conf", domain));
+
+        if cfg_file.exists() {
+            eprintln!("{}", "Web server config file already exists! Skipping step.".red());
+            return;
+        }
+
+        let file = File::create(&cfg_file);
+
     }
 }
 
