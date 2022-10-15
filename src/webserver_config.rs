@@ -45,7 +45,51 @@ impl WebServer {
     }
     
     fn install(&self) {
+        println!("{}", "Installing...".cyan());
+        let update = Command::new("apt").arg("update").output();
+        if let Err(e) = update {
+            eprintln!(
+                "{} {}",
+                "Failed installing webserver! Error:".red(),
+                e.to_string().red().bold()
+            );
+            exit(1);
+        }
+
+        let install = Command::new("apt")
+        .args(["install", "-y"])
+        .args(match self {
+            Self::Apache => vec![
+                "apache2",
+                "apache2-utils"
+            ],
+            Self::NGINX => vec![
+                "nginx-full"
+            ],
+            Self::None => panic!("None during webserver install.")
+        })
+        .output();
+
+        if let Err(e) = install {
+            eprintln!(
+                "{} {}",
+                "Failed installing webserver! Error:".red(),
+                e.to_string().red().bold()
+            );
+            exit(1);
+        }
+
+        let install = install.unwrap();
+
+        if !install.status.success() {
+            eprintln!("{}", "Failed installation of webserver. Process output: ".red());
+            print_install_failure(&install);
+            eprintln!("{}", "Please install the selected webserver and try again!".bright_red().bold());
+            exit(1);
+        }
         
+
+        println!("{}", "Installation of webserver was successful!".green());
     }
 
     pub fn run_checks(&self) {
@@ -63,51 +107,7 @@ impl WebServer {
         if !installed && inquire::Confirm::new(
             &format!("It appears {} is not installed! Install it with apt?", self)
         ).with_render_config(blue_text).with_default(true).prompt().expect("Failed prompting for install of webserver.") {
-            println!("{}", "Installing...".cyan());
-            let update = Command::new("apt").arg("update").output();
-            if let Err(e) = update {
-                eprintln!(
-                    "{} {}",
-                    "Failed installing webserver! Error:".red(),
-                    e.to_string().red().bold()
-                );
-                exit(1);
-            }
-
-            let install = Command::new("apt")
-            .args(["install", "-y"])
-            .args(match self {
-                Self::Apache => vec![
-                    "apache2",
-                    "apache2-utils"
-                ],
-                Self::NGINX => vec![
-                    "nginx-full"
-                ],
-                Self::None => panic!("None during webserver install.")
-            })
-            .output();
-
-            if let Err(e) = install {
-                eprintln!(
-                    "{} {}",
-                    "Failed installing webserver! Error:".red(),
-                    e.to_string().red().bold()
-                );
-                exit(1);
-            }
-
-            let install = install.unwrap();
-
-            if !install.status.success() {
-                eprintln!("{}", "Failed installation of webserver. Process output: ".red());
-                print_install_failure(&install);
-                eprintln!("{}", "Please install the selected webserver and try again!".bright_red().bold());
-                exit(1);
-            }
-            
-
-            println!("{}", "Installation of webserver was successful!".green());
+            self.install();
         }
     }
 
